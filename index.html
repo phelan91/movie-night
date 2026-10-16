@@ -122,6 +122,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
 .btn2{background:none;border:1px solid var(--brass-dim);color:var(--brass);font:600 14px var(--body);padding:9px 16px;border-radius:10px;cursor:pointer;white-space:nowrap}
 .btn2:hover{background:rgba(233,178,79,.08)}
 .err{color:#f0a08f;font-size:13px;min-height:0}
+.codechip{flex:1;min-width:0;background:var(--void);border:1px solid var(--line);color:var(--cream);
+  font:600 15px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.03em;
+  padding:10px 12px;border-radius:10px;overflow-wrap:anywhere;user-select:all;display:flex;align-items:center}
 .toggle{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
 .toggle input{margin-top:3px;accent-color:var(--brass);width:18px;height:18px}
 .toggle span{display:grid}
@@ -166,6 +169,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
       <p class="tagline">Movie night · two draws · no arguments</p>
       <button class="sound" id="sound" type="button" aria-pressed="true">Sound on</button>
     </header>
+
+    <div class="card" id="sync-card">
+      <h2>Sync your data</h2>
+      <div id="sync-box"></div>
+    </div>
 
     <div class="tabs" role="tablist" aria-label="Draws">
       <button id="tab-people" role="tab" aria-selected="true" aria-controls="p-people" type="button">Who picks the film</button>
@@ -240,6 +248,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
 </div>
 <canvas id="pop" aria-hidden="true"></canvas>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 (function(){
   const TINTS=["#e9b24f","#4fa39a","#d8705f","#93b05c","#a982d1","#5e95d6","#e086a8","#cf9a5e","#7fc3c9","#c9c35a"];
@@ -252,8 +262,121 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
   };
   let S=defaults;
   try{const saved=JSON.parse(localStorage.getItem(KEY)||"null");if(saved&&typeof saved==="object"){if(saved.peopleAreExamples===undefined)saved.peopleAreExamples=false;S=Object.assign({},defaults,saved);}}catch(e){}
-  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
   const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  /* ---------- cloud sync ---------- */
+  const firebaseConfig={
+    apiKey:"AIzaSyD4YIC_UcD9cCihNRi-QCBhecTmDw4Z7TQ",
+    authDomain:"movie-night-f7315.firebaseapp.com",
+    projectId:"movie-night-f7315",
+    storageBucket:"movie-night-f7315.firebasestorage.app",
+    messagingSenderId:"345747543908",
+    appId:"1:345747543908:web:3a220d23bdc7e9c4644c71"
+  };
+  let fsDb=null;
+  try{
+    if(window.firebase&&firebaseConfig.apiKey!=="FIREBASE_API_KEY"){
+      firebase.initializeApp(firebaseConfig);
+      fsDb=firebase.firestore();
+    }
+  }catch(e){ console.warn("Sync unavailable:",e); }
+
+  const CODE_KEY="picturehouse.synccode.v1";
+  let syncCode=null,unsub=null,pushTimer=null,applyingRemote=false,syncStatusText="",syncStatusErr=false;
+  try{ syncCode=localStorage.getItem(CODE_KEY)||null; }catch(e){}
+
+  function genCode(){
+    const abc="23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const arr=new Uint8Array(20);
+    try{crypto.getRandomValues(arr)}catch(e){for(let i=0;i<20;i++)arr[i]=Math.floor(Math.random()*256)}
+    let s="";for(let i=0;i<20;i++)s+=abc[arr[i]%abc.length];
+    return s.match(/.{1,5}/g).join("-");
+  }
+  function syncPayload(){
+    return {people:S.people,peopleAreExamples:S.peopleAreExamples,rotation:S.rotation,picked:S.picked,history:S.history,
+      meals:S.meals,mealsAreExamples:S.mealsAreExamples,lastMeal:S.lastMeal,updatedAt:Date.now()};
+  }
+  function applyRemote(data){
+    if(!data)return;
+    applyingRemote=true;
+    S=Object.assign({},S,data);
+    try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+    renderPeople();renderMeals();peopleReel.idle();dinnerReel.idle();
+    applyingRemote=false;
+  }
+  function schedulePush(){
+    if(!fsDb||!syncCode||applyingRemote)return;
+    clearTimeout(pushTimer);
+    pushTimer=setTimeout(()=>{
+      fsDb.collection("syncs").doc(syncCode).set(syncPayload(),{merge:true})
+        .catch(()=>setSyncStatus("Couldn't save to the cloud. Check your connection.",true));
+    },450);
+  }
+  function startListening(){
+    if(!fsDb||!syncCode)return;
+    if(unsub)unsub();
+    unsub=fsDb.collection("syncs").doc(syncCode).onSnapshot(
+      snap=>{ if(snap.exists) applyRemote(snap.data()); },
+      ()=>setSyncStatus("Sync connection lost.",true)
+    );
+  }
+  async function adoptCode(code,isNew){
+    setSyncStatus("Connecting…");
+    if(!fsDb){ setSyncStatus("Sync isn't available right now.",true); return; }
+    try{
+      if(isNew){
+        await fsDb.collection("syncs").doc(code).set(syncPayload(),{merge:true});
+      }else{
+        const snap=await fsDb.collection("syncs").doc(code).get();
+        if(snap.exists){ applyRemote(snap.data()); }
+        else{ await fsDb.collection("syncs").doc(code).set(syncPayload(),{merge:true}); }
+      }
+      syncCode=code;
+      try{localStorage.setItem(CODE_KEY,code)}catch(e){}
+      startListening();
+      setSyncStatus(isNew?"Synced. This code is now linked to this data.":"Synced — loaded your data.");
+    }catch(e){
+      setSyncStatus("Couldn't connect. Check the code and try again.",true);
+    }
+  }
+  function stopSync(){
+    if(unsub){unsub();unsub=null;}
+    syncCode=null;
+    try{localStorage.removeItem(CODE_KEY)}catch(e){}
+    setSyncStatus("");
+  }
+  function setSyncStatus(t,err){ syncStatusText=t||""; syncStatusErr=!!err; renderSync(); }
+  function renderSync(){
+    const box=document.getElementById("sync-box");
+    if(!box)return;
+    if(syncCode){
+      box.innerHTML=
+        '<p>Your sync code</p>'+
+        '<div class="add"><code class="codechip" id="sync-code-display">'+esc(syncCode)+'</code>'+
+        '<button class="btn2" type="button" id="copy-code">Copy</button></div>'+
+        '<p>Enter this on another device to bring this data there too. Keep it private — anyone with this code can see and change it.</p>'+
+        '<button class="btn2" type="button" id="stop-sync">Stop syncing on this device</button>'+
+        (syncStatusText?'<p class="'+(syncStatusErr?"err":"")+'">'+esc(syncStatusText)+'</p>':'');
+    }else{
+      box.innerHTML=
+        '<p>Make your names, votes and history follow you to your other devices.</p>'+
+        '<button class="btn2" type="button" id="create-code">Create a sync code</button>'+
+        '<div class="add"><input id="join-code" placeholder="Or enter a code from another device" autocomplete="off"><button class="btn2" type="button" id="join-sync">Sync</button></div>'+
+        (syncStatusText?'<p class="'+(syncStatusErr?"err":"")+'">'+esc(syncStatusText)+'</p>':'');
+    }
+    const cc=document.getElementById("create-code"); if(cc)cc.addEventListener("click",()=>adoptCode(genCode(),true));
+    const js=document.getElementById("join-sync"); if(js)js.addEventListener("click",()=>{
+      const v=document.getElementById("join-code").value.trim().toUpperCase().replace(/\s+/g,"");
+      if(v)adoptCode(v,false);
+    });
+    const ss=document.getElementById("stop-sync"); if(ss)ss.addEventListener("click",stopSync);
+    const cp=document.getElementById("copy-code"); if(cp)cp.addEventListener("click",async()=>{
+      try{await navigator.clipboard.writeText(syncCode);cp.textContent="Copied";setTimeout(()=>cp.textContent="Copy",1500);}
+      catch(e){}
+    });
+  }
+
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){} schedulePush();};
   const rand=()=>{try{return crypto.getRandomValues(new Uint32Array(1))[0]/4294967296}catch(e){return Math.random()}};
   const reduced=false;
   const pickWeighted=list=>{const t=list.reduce((s,e)=>s+e.weight,0);let r=rand()*t;for(const e of list){if((r-=e.weight)<0)return e}return list[list.length-1]};
@@ -517,6 +640,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
 
   renderPeople();renderMeals();
   show(location.hash==="#dinner"?"tab-dinner":"tab-people");
+  renderSync();
+  if(syncCode&&fsDb){
+    setSyncStatus("Connecting…");
+    fsDb.collection("syncs").doc(syncCode).get().then(snap=>{
+      if(snap.exists)applyRemote(snap.data());
+      startListening();
+      setSyncStatus("Synced.");
+    }).catch(()=>setSyncStatus("Couldn't reach sync. Showing what's saved on this device.",true));
+  }
 })();
 </script>
 
