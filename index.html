@@ -62,8 +62,8 @@ h1{font-family:var(--display);font-weight:400;color:var(--brass);margin:0;
   font:500 12px var(--body);letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;cursor:pointer}
 .sound[aria-pressed="true"]{color:var(--brass);border-color:var(--brass-dim)}
 
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:rgba(8,1,2,.55);border:1px solid var(--line);border-radius:14px;padding:5px}
-.tabs button{background:none;border:0;color:var(--muted);font:600 14px var(--body);padding:12px 8px;border-radius:10px;cursor:pointer;letter-spacing:.02em}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;background:rgba(8,1,2,.55);border:1px solid var(--line);border-radius:14px;padding:5px}
+.tabs button{background:none;border:0;color:var(--muted);font:600 14px var(--body);padding:12px 6px;border-radius:10px;cursor:pointer;letter-spacing:.02em}
 .tabs button[aria-selected="true"]{background:var(--brass);color:var(--ink)}
 
 .panel{display:grid;gap:18px}
@@ -178,6 +178,24 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
 .history li{display:flex;justify-content:space-between;gap:12px;font-size:14px;border-bottom:1px dashed var(--line);padding-bottom:6px}
 .history li span{color:var(--muted);font-variant-numeric:tabular-nums}
 
+.watchlist{display:grid;gap:10px}
+.watch-item{background:var(--void);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px}
+.watch-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.watch-title-wrap{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;min-width:0}
+.watch-title-wrap strong{font-weight:500;overflow-wrap:anywhere}
+.watch-date{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.watch-people{display:flex;flex-wrap:wrap;gap:6px}
+.person-chip{background:none;border:1px solid var(--line);color:var(--muted);font:600 12px var(--body);
+  padding:5px 11px;border-radius:999px;cursor:pointer}
+.person-chip.on{background:var(--brass);border-color:var(--brass);color:var(--ink)}
+.watch-ratings{display:grid;gap:7px}
+.rate-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rate-name{font-size:13px;font-weight:600}
+.stars{display:flex;gap:1px}
+.star{background:none;border:0;color:rgba(247,233,204,.22);font-size:20px;line-height:1;cursor:pointer;padding:3px}
+.star.on{color:var(--brass)}
+.star:hover{color:var(--brass-dim)}
+
 #pop{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:20}
 
 @media (max-width:480px){
@@ -205,8 +223,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
     </div>
 
     <div class="tabs" role="tablist" aria-label="Draws">
-      <button id="tab-people" role="tab" aria-selected="true" aria-controls="p-people" type="button">Who picks the film</button>
-      <button id="tab-dinner" role="tab" aria-selected="false" aria-controls="p-dinner" type="button">What's for dinner</button>
+      <button id="tab-people" role="tab" aria-selected="true" aria-controls="p-people" type="button">Pick the film</button>
+      <button id="tab-dinner" role="tab" aria-selected="false" aria-controls="p-dinner" type="button">Pick dinner</button>
+      <button id="tab-watchlist" role="tab" aria-selected="false" aria-controls="p-watchlist" type="button">Watchlist</button>
     </div>
 
     <section class="panel" id="p-people" role="tabpanel" aria-labelledby="tab-people">
@@ -276,6 +295,25 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
         </div>
       </div>
     </section>
+
+    <section class="panel" id="p-watchlist" role="tabpanel" aria-labelledby="tab-watchlist" hidden>
+      <div class="card">
+        <h2>To watch</h2>
+        <p>Add a title and tag your name if you're keen to watch it. Mark it watched when you have, then everyone can rate it.</p>
+        <p id="watchlist-note">These are example titles. Swap in your own.</p>
+        <div class="watchlist" id="watchlistPending"></div>
+        <form class="add" id="add-watch">
+          <input id="watch-title" maxlength="60" placeholder="Add a title" autocomplete="off" aria-label="Add a title">
+          <button class="btn2" type="submit">Add</button>
+        </form>
+        <div class="err" id="watch-err"></div>
+      </div>
+
+      <div class="card">
+        <h2>Watched</h2>
+        <div class="watchlist" id="watchlistWatched"></div>
+      </div>
+    </section>
   </div>
 </div>
 <canvas id="pop" aria-hidden="true"></canvas>
@@ -290,10 +328,20 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
   const defaults={
     people:["Alex","Sam","Jordan","Riley"],peopleAreExamples:true,rotation:false,picked:[],history:[],
     meals:[{name:"Pizza",votes:2},{name:"Thai",votes:1},{name:"Fish and chips",votes:1},{name:"Burgers",votes:1}],
-    mealsAreExamples:true,lastMeal:null,sound:true
+    mealsAreExamples:true,lastMeal:null,sound:true,
+    watchlist:[
+      {title:"Spirited Away",interested:["Alex","Riley"],watched:false,watchedAt:null,ratings:{}},
+      {title:"The Grand Budapest Hotel",interested:["Sam"],watched:false,watchedAt:null,ratings:{}},
+      {title:"Paddington 2",interested:["Alex","Sam","Jordan"],watched:true,watchedAt:Date.now()-6*86400000,ratings:{Alex:5,Sam:4,Jordan:5}}
+    ],
+    watchlistAreExamples:true
   };
   let S=defaults;
-  try{const saved=JSON.parse(localStorage.getItem(KEY)||"null");if(saved&&typeof saved==="object"){if(saved.peopleAreExamples===undefined)saved.peopleAreExamples=false;S=Object.assign({},defaults,saved);}}catch(e){}
+  try{const saved=JSON.parse(localStorage.getItem(KEY)||"null");if(saved&&typeof saved==="object"){
+    if(saved.peopleAreExamples===undefined)saved.peopleAreExamples=false;
+    if(saved.watchlist===undefined){saved.watchlist=[];saved.watchlistAreExamples=false;}
+    S=Object.assign({},defaults,saved);
+  }}catch(e){}
   const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
   /* ---------- cloud sync ---------- */
@@ -330,14 +378,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
   }
   function syncPayload(){
     return {people:S.people,peopleAreExamples:S.peopleAreExamples,rotation:S.rotation,picked:S.picked,history:S.history,
-      meals:S.meals,mealsAreExamples:S.mealsAreExamples,lastMeal:S.lastMeal,updatedAt:Date.now()};
+      meals:S.meals,mealsAreExamples:S.mealsAreExamples,lastMeal:S.lastMeal,
+      watchlist:S.watchlist,watchlistAreExamples:S.watchlistAreExamples,updatedAt:Date.now()};
   }
   function applyRemote(data){
     if(!data)return;
     applyingRemote=true;
     S=Object.assign({},S,data);
     try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
-    renderPeople();renderMeals();peopleReel.refreshIfIdle();dinnerReel.refreshIfIdle();
+    renderPeople();renderMeals();renderWatchlist();peopleReel.refreshIfIdle();dinnerReel.refreshIfIdle();
     applyingRemote=false;
   }
   function schedulePush(){
@@ -616,7 +665,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
   document.getElementById("people").addEventListener("click",e=>{
     const b=e.target.closest("[data-rm]");if(!b||peopleReel.isSpinning())return;
     const name=S.people[+b.dataset.rm];S.people.splice(+b.dataset.rm,1);S.peopleAreExamples=false;S.picked=S.picked.filter(p=>p!==name);
-    save();renderPeople();peopleReel.idle();
+    S.watchlist.forEach(w=>{ w.interested=w.interested.filter(p=>p!==name); delete w.ratings[name]; });
+    save();renderPeople();peopleReel.idle();renderWatchlist();
   });
   document.getElementById("add-person").addEventListener("submit",e=>{
     e.preventDefault();const inp=document.getElementById("person-name"),err=document.getElementById("person-err");
@@ -624,7 +674,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
     if(!v)return;
     if(S.people.some(p=>p.toLowerCase()===v.toLowerCase())){err.textContent=v+" is already in.";return}
     if(peopleReel.isSpinning()){err.textContent="Wait for the reel to stop.";return}
-    S.people.push(v);S.peopleAreExamples=false;inp.value="";save();renderPeople();peopleReel.idle();
+    S.people.push(v);S.peopleAreExamples=false;inp.value="";save();renderPeople();peopleReel.idle();renderWatchlist();
   });
   const clearBtn=document.getElementById("clear-history");let clearArmed=null;
   clearBtn.addEventListener("click",()=>{
@@ -677,19 +727,96 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
     S.meals.forEach(m=>m.votes=0);save();renderMeals();dinnerReel.idle();
   });
 
+  /* ---------- watchlist ---------- */
+  function renderWatchlist(){
+    const withIdx=S.watchlist.map((w,i)=>Object.assign({i},w));
+    const pending=withIdx.filter(w=>!w.watched);
+    const watched=withIdx.filter(w=>w.watched).sort((a,b)=>(b.watchedAt||0)-(a.watchedAt||0));
+
+    document.getElementById("watchlistPending").innerHTML=pending.length?pending.map(w=>{
+      const chips=S.people.map(p=>{
+        const on=w.interested.includes(p);
+        return '<button type="button" class="person-chip'+(on?" on":"")+'" data-align="'+w.i+'" data-name="'+esc(p)+'">'+esc(p)+'</button>';
+      }).join("")||"<p>Add some crew on the first tab to tag names.</p>";
+      const count=w.interested.length;
+      const countText=count?count+(count===1?" person wants to watch this":" people want to watch this"):"No one's claimed this yet";
+      return '<div class="watch-item">'+
+        '<div class="watch-head"><span class="watch-title-wrap"><strong>'+esc(w.title)+'</strong></span>'+
+        '<button class="x" type="button" data-rm="'+w.i+'" aria-label="Remove '+esc(w.title)+'">×</button></div>'+
+        '<div class="watch-people">'+chips+'</div>'+
+        '<div class="row-actions"><span class="odds">'+countText+'</span>'+
+        '<button class="btn2" type="button" data-watched="'+w.i+'">Mark watched</button></div>'+
+      '</div>';
+    }).join(""):'<p>Nothing on the list yet. Add a title below.</p>';
+
+    document.getElementById("watchlistWatched").innerHTML=watched.length?watched.map(w=>{
+      const ratedVals=S.people.map(p=>w.ratings[p]).filter(v=>v>0);
+      const avg=ratedVals.length?(ratedVals.reduce((s,v)=>s+v,0)/ratedVals.length):0;
+      const rows=S.people.map(p=>{
+        const mine=w.ratings[p]||0;
+        const stars=[1,2,3,4,5].map(n=>'<button type="button" class="star'+(n<=mine?" on":"")+'" data-rate="'+w.i+'" data-name="'+esc(p)+'" data-v="'+n+'" aria-label="'+esc(p)+' rate '+n+' star'+(n===1?"":"s")+'">★</button>').join("");
+        return '<div class="rate-row"><span class="rate-name">'+esc(p)+'</span><div class="stars">'+stars+'</div></div>';
+      }).join("")||"<p>Add some crew on the first tab to rate it.</p>";
+      const avgText=ratedVals.length?avg.toFixed(1)+" ★ average ("+ratedVals.length+(ratedVals.length===1?" rating)":" ratings)"):"No ratings yet";
+      return '<div class="watch-item watched">'+
+        '<div class="watch-head"><span class="watch-title-wrap"><strong>'+esc(w.title)+'</strong>'+
+        (w.watchedAt?'<span class="watch-date">'+fmtDate(w.watchedAt)+'</span>':'')+'</span>'+
+        '<button class="x" type="button" data-rm="'+w.i+'" aria-label="Remove '+esc(w.title)+'">×</button></div>'+
+        '<div class="watch-ratings">'+rows+'</div>'+
+        '<div class="row-actions"><span class="odds">'+avgText+'</span>'+
+        '<button class="btn2" type="button" data-unwatch="'+w.i+'">Not watched yet</button></div>'+
+      '</div>';
+    }).join(""):'<p>Nothing watched yet.</p>';
+
+    document.getElementById("watchlist-note").hidden=!S.watchlistAreExamples;
+  }
+  document.getElementById("watchlistPending").addEventListener("click",e=>{
+    const rm=e.target.closest("[data-rm]"),align=e.target.closest("[data-align]"),mark=e.target.closest("[data-watched]");
+    if(rm){ S.watchlist.splice(+rm.dataset.rm,1); }
+    else if(align){
+      const w=S.watchlist[+align.dataset.align],name=align.dataset.name;
+      const idx=w.interested.indexOf(name);
+      if(idx===-1)w.interested.push(name);else w.interested.splice(idx,1);
+    }
+    else if(mark){ const w=S.watchlist[+mark.dataset.watched]; w.watched=true; w.watchedAt=Date.now(); }
+    else return;
+    S.watchlistAreExamples=false;
+    save();renderWatchlist();
+  });
+  document.getElementById("watchlistWatched").addEventListener("click",e=>{
+    const rm=e.target.closest("[data-rm]"),star=e.target.closest("[data-rate]"),unwatch=e.target.closest("[data-unwatch]");
+    if(rm){ S.watchlist.splice(+rm.dataset.rm,1); }
+    else if(star){
+      const w=S.watchlist[+star.dataset.rate],name=star.dataset.name,v=+star.dataset.v;
+      if(w.ratings[name]===v)delete w.ratings[name];else w.ratings[name]=v;
+    }
+    else if(unwatch){ const w=S.watchlist[+unwatch.dataset.unwatch]; w.watched=false; w.watchedAt=null; w.ratings={}; }
+    else return;
+    S.watchlistAreExamples=false;
+    save();renderWatchlist();
+  });
+  document.getElementById("add-watch").addEventListener("submit",e=>{
+    e.preventDefault();const inp=document.getElementById("watch-title"),err=document.getElementById("watch-err");
+    const v=inp.value.trim();err.textContent="";
+    if(!v)return;
+    if(S.watchlist.some(w=>w.title.toLowerCase()===v.toLowerCase())){err.textContent=v+" is already on the list.";return}
+    S.watchlist.push({title:v,interested:[],watched:false,watchedAt:null,ratings:{}});
+    S.watchlistAreExamples=false;inp.value="";save();renderWatchlist();
+  });
+
   /* ---------- tabs ---------- */
-  const tabs=[["tab-people","p-people",peopleReel],["tab-dinner","p-dinner",dinnerReel]];
+  const tabs=[["tab-people","p-people",peopleReel],["tab-dinner","p-dinner",dinnerReel],["tab-watchlist","p-watchlist",null]];
   function show(id){
     tabs.forEach(([t,p,reel])=>{
       const on=t===id;document.getElementById(t).setAttribute("aria-selected",on?"true":"false");
       document.getElementById(p).hidden=!on;
-      if(on)requestAnimationFrame(()=>reel.show());
+      if(on&&reel)requestAnimationFrame(()=>reel.show());
     });
   }
   tabs.forEach(([t])=>document.getElementById(t).addEventListener("click",()=>show(t)));
 
-  renderPeople();renderMeals();
-  show(location.hash==="#dinner"?"tab-dinner":"tab-people");
+  renderPeople();renderMeals();renderWatchlist();
+  show(location.hash==="#dinner"?"tab-dinner":location.hash==="#watchlist"?"tab-watchlist":"tab-people");
   renderSync();
   if(syncCode&&fsDb){
     setSyncStatus("Connecting…");
