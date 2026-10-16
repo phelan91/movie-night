@@ -94,6 +94,14 @@ h1{font-family:var(--display);font-weight:400;color:var(--brass);margin:0;
 .dial::after{top:50%;left:-14px;right:-14px;height:1px}
 .dial .num{font-family:var(--display);font-size:62px;line-height:1;color:var(--cream);position:relative;z-index:1}
 
+.announce{position:absolute;inset:0;display:grid;place-items:center;background:rgba(8,1,2,.92);cursor:pointer;
+  animation:announce-in .35s cubic-bezier(.2,1.4,.4,1)}
+.announce p{font-family:var(--display);font-weight:400;font-size:clamp(22px,6vw,34px);line-height:1.2;color:var(--cream);
+  text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6);padding:0 20px;text-wrap:balance;margin:0}
+.announce p b{font-weight:400;color:var(--brass);text-shadow:0 0 18px rgba(233,178,79,.5)}
+@keyframes announce-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){.announce{animation:none}}
+
 .result{text-align:center;font-family:var(--display);font-size:clamp(20px,5vw,30px);line-height:1.15;min-height:2.3em;
   display:grid;place-items:center;margin:0;text-wrap:balance}
 .result b{font-weight:400;color:var(--brass)}
@@ -188,6 +196,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
           <div class="track"></div>
           <div class="gate" aria-hidden="true"><i></i></div>
           <div class="leader" hidden><div class="dial"><span class="num">3</span></div></div>
+          <div class="announce" hidden><p></p></div>
         </div>
         <p class="result" aria-live="polite"></p>
         <button class="go" type="button">Roll it</button>
@@ -195,6 +204,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
 
       <div class="card">
         <h2>Who's in</h2>
+        <p>Each name is shuffled onto the reel a few times, in a random order — that's what gives the spin some suspense. Everyone still has exactly the same odds.</p>
         <p id="people-note">These are example names. Swap in your own.</p>
         <ul class="chips" id="people"></ul>
         <form class="add" id="add-person">
@@ -223,6 +233,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
           <div class="track"></div>
           <div class="gate" aria-hidden="true"><i></i></div>
           <div class="leader" hidden><div class="dial"><span class="num">3</span></div></div>
+          <div class="announce" hidden><p></p></div>
         </div>
         <p class="result" aria-live="polite"></p>
         <button class="go" type="button">Roll it</button>
@@ -301,7 +312,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
     applyingRemote=true;
     S=Object.assign({},S,data);
     try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
-    renderPeople();renderMeals();peopleReel.idle();dinnerReel.idle();
+    renderPeople();renderMeals();peopleReel.refreshIfIdle();dinnerReel.refreshIfIdle();
     applyingRemote=false;
   }
   function schedulePush(){
@@ -449,9 +460,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
   function Reel(panel,opts){
     const stage=panel.querySelector(".stage"),track=panel.querySelector(".track"),leader=panel.querySelector(".leader"),
       dial=panel.querySelector(".dial"),numEl=panel.querySelector(".num"),btn=panel.querySelector(".go"),
-      result=panel.querySelector(".result"),booth=panel.querySelector(".booth");
-    let seq=[],els=[],pos=6.5,spinning=false;
+      result=panel.querySelector(".result"),booth=panel.querySelector(".booth"),
+      announce=panel.querySelector(".announce"),announceMsg=panel.querySelector(".announce p");
+    let seq=[],els=[],pos=6.5,spinning=false,settled=false,announceTimer=null;
     bulbs(booth);
+    function hideAnnounce(){clearTimeout(announceTimer);announce.hidden=true}
+    announce.addEventListener("click",hideAnnounce);
     const fw=()=>els[0]?els[0].getBoundingClientRect().width:160;
     function render(){
       track.innerHTML="";
@@ -461,6 +475,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
     function place(){track.style.transform="translate3d("+(stage.clientWidth/2-pos*fw())+"px,0,0)"}
     function idle(){
       if(spinning)return;
+      settled=false;hideAnnounce();
       const en=opts.entries();
       if(!en.length){seq=Array.from({length:14},()=>({label:"?",tint:"#6b5a4a"}))}
       else{seq=Array.from({length:14},(_,i)=>en[((i-6)%en.length+en.length)%en.length])}
@@ -488,6 +503,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
       if(spinning)return;
       const en=opts.entries();if(!en.length)return;
       spinning=true;btn.disabled=true;audio();
+      hideAnnounce();
       result.innerHTML="Rolling…";
       const cut=Math.max(0,Math.floor(pos)-7);seq=seq.slice(cut);pos-=cut;
       const winner=pickWeighted(en),start=Math.floor(pos),wi=start+100+Math.floor(rand()*20);
@@ -515,13 +531,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
       els[wi].classList.add("won");
       fanfare();popcorn(stage);
       result.innerHTML=opts.winText(winner);
+      announceMsg.innerHTML=opts.winText(winner);
+      announce.hidden=false;
+      announceTimer=setTimeout(()=>{announce.hidden=true},3200);
+      settled=true;
       spinning=false;btn.disabled=false;
       opts.onWin(winner);
     }
     btn.addEventListener("click",spin);
     addEventListener("resize",()=>{if(!spinning)place()});
     let seen=false;
-    return {idle,isSpinning:()=>spinning,show:()=>{if(!seen){seen=true;idle()}else place()}};
+    return {idle,isSpinning:()=>spinning,show:()=>{if(!seen){seen=true;idle()}else place()},
+      refreshIfIdle:()=>{if(!settled)idle()}};
   }
 
   /* ---------- people ---------- */
