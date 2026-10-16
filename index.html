@@ -94,13 +94,15 @@ h1{font-family:var(--display);font-weight:400;color:var(--brass);margin:0;
 .dial::after{top:50%;left:-14px;right:-14px;height:1px}
 .dial .num{font-family:var(--display);font-size:62px;line-height:1;color:var(--cream);position:relative;z-index:1}
 
-.announce{position:absolute;inset:0;display:grid;place-items:center;background:rgba(8,1,2,.92);cursor:pointer;
-  animation:announce-in .35s cubic-bezier(.2,1.4,.4,1)}
-.announce p{font-family:var(--display);font-weight:400;font-size:clamp(22px,6vw,34px);line-height:1.2;color:var(--cream);
-  text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6);padding:0 20px;text-wrap:balance;margin:0}
-.announce p b{font-weight:400;color:var(--brass);text-shadow:0 0 18px rgba(233,178,79,.5)}
+.announce{position:absolute;inset:0;display:grid;place-items:center;background:rgba(8,1,2,.92);cursor:pointer}
+.announce-card{border:3px solid var(--cream);border-radius:18px;padding:26px 24px;display:grid;gap:14px;
+  justify-items:center;max-width:88%;animation:announce-in .35s cubic-bezier(.2,1.4,.4,1)}
+.announce-card p{font-family:var(--display);font-weight:400;font-size:clamp(22px,6vw,34px);line-height:1.2;color:var(--cream);
+  text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6);text-wrap:balance;margin:0}
+.announce-card p b{font-weight:400;color:var(--brass);text-shadow:0 0 18px rgba(233,178,79,.5)}
+.announce-card small{font:600 11px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 @keyframes announce-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
-@media (prefers-reduced-motion: reduce){.announce{animation:none}}
+@media (prefers-reduced-motion: reduce){.announce-card{animation:none}}
 
 .result{text-align:center;font-family:var(--display);font-size:clamp(20px,5vw,30px);line-height:1.15;min-height:2.3em;
   display:grid;place-items:center;margin:0;text-wrap:balance}
@@ -196,7 +198,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
           <div class="track"></div>
           <div class="gate" aria-hidden="true"><i></i></div>
           <div class="leader" hidden><div class="dial"><span class="num">3</span></div></div>
-          <div class="announce" hidden><p></p></div>
+          <div class="announce" hidden><div class="announce-card"><p></p><small>Tap to continue</small></div></div>
         </div>
         <p class="result" aria-live="polite"></p>
         <button class="go" type="button">Roll it</button>
@@ -233,7 +235,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
           <div class="track"></div>
           <div class="gate" aria-hidden="true"><i></i></div>
           <div class="leader" hidden><div class="dial"><span class="num">3</span></div></div>
-          <div class="announce" hidden><p></p></div>
+          <div class="announce" hidden><div class="announce-card"><p></p><small>Tap to continue</small></div></div>
         </div>
         <p class="result" aria-live="polite"></p>
         <button class="go" type="button">Roll it</button>
@@ -296,12 +298,16 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
   let syncCode=null,unsub=null,pushTimer=null,applyingRemote=false,syncStatusText="",syncStatusErr=false;
   try{ syncCode=localStorage.getItem(CODE_KEY)||null; }catch(e){}
 
+  const MIN_CODE_LEN=16;
   function genCode(){
-    const abc="23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const abc="23456789abcdefghjkmnpqrstuvwxyz";
     const arr=new Uint8Array(20);
     try{crypto.getRandomValues(arr)}catch(e){for(let i=0;i<20;i++)arr[i]=Math.floor(Math.random()*256)}
     let s="";for(let i=0;i<20;i++)s+=abc[arr[i]%abc.length];
     return s.match(/.{1,5}/g).join("-");
+  }
+  function normalizeCode(s){
+    return String(s).trim().replace(/\s+/g," ").toLowerCase();
   }
   function syncPayload(){
     return {people:S.people,peopleAreExamples:S.peopleAreExamples,rotation:S.rotation,picked:S.picked,history:S.history,
@@ -371,15 +377,19 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
     }else{
       box.innerHTML=
         '<p>Make your names, votes and history follow you to your other devices.</p>'+
-        '<button class="btn2" type="button" id="create-code">Create a sync code</button>'+
-        '<div class="add"><input id="join-code" placeholder="Or enter a code from another device" autocomplete="off"><button class="btn2" type="button" id="join-sync">Sync</button></div>'+
+        '<div class="add"><input id="join-code" placeholder="Pick a phrase to share with family" autocomplete="off"><button class="btn2" type="button" id="join-sync">Sync</button></div>'+
+        '<p>At least '+MIN_CODE_LEN+' characters — a short phrase works well, like "Phelan Movie Nights".</p>'+
+        '<button class="btn2" type="button" id="create-code">Or generate a random one for me</button>'+
         (syncStatusText?'<p class="'+(syncStatusErr?"err":"")+'">'+esc(syncStatusText)+'</p>':'');
     }
     const cc=document.getElementById("create-code"); if(cc)cc.addEventListener("click",()=>adoptCode(genCode(),true));
     const js=document.getElementById("join-sync"); if(js)js.addEventListener("click",()=>{
-      const v=document.getElementById("join-code").value.trim().toUpperCase().replace(/\s+/g,"");
-      if(v)adoptCode(v,false);
+      const v=normalizeCode(document.getElementById("join-code").value);
+      if(!v)return;
+      if(v.length<MIN_CODE_LEN){ setSyncStatus("Pick something at least "+MIN_CODE_LEN+" characters — try a short phrase.",true); return; }
+      adoptCode(v,false);
     });
+    const jc=document.getElementById("join-code"); if(jc)jc.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();js.click()}});
     const ss=document.getElementById("stop-sync"); if(ss)ss.addEventListener("click",stopSync);
     const cp=document.getElementById("copy-code"); if(cp)cp.addEventListener("click",async()=>{
       try{await navigator.clipboard.writeText(syncCode);cp.textContent="Copied";setTimeout(()=>cp.textContent="Copy",1500);}
@@ -462,9 +472,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
       dial=panel.querySelector(".dial"),numEl=panel.querySelector(".num"),btn=panel.querySelector(".go"),
       result=panel.querySelector(".result"),booth=panel.querySelector(".booth"),
       announce=panel.querySelector(".announce"),announceMsg=panel.querySelector(".announce p");
-    let seq=[],els=[],pos=6.5,spinning=false,settled=false,announceTimer=null;
+    let seq=[],els=[],pos=6.5,spinning=false,settled=false;
     bulbs(booth);
-    function hideAnnounce(){clearTimeout(announceTimer);announce.hidden=true}
+    function hideAnnounce(){announce.hidden=true}
     announce.addEventListener("click",hideAnnounce);
     const fw=()=>els[0]?els[0].getBoundingClientRect().width:160;
     function render(){
@@ -533,7 +543,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--cream);outline-
       result.innerHTML=opts.winText(winner);
       announceMsg.innerHTML=opts.winText(winner);
       announce.hidden=false;
-      announceTimer=setTimeout(()=>{announce.hidden=true},3200);
       settled=true;
       spinning=false;btn.disabled=false;
       opts.onWin(winner);
